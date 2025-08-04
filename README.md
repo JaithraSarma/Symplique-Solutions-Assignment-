@@ -21,7 +21,7 @@ A serverless Azure architecture stores 2M+ billing records (~300 KB each, ~600 G
 - **Security**: Encryption at rest/in transit, RBAC + Managed Identities, diagnostic logs, soft-delete, immutability as needed.
 
 ## Architecture Diagram  
-![Hybrid Azure hot-cold data architecture with fallback and monitoring][diagram]
+![Hybrid Azure hot-cold data architecture with fallback and monitoring][C:\Users\Administrator\Desktop\Architecture diagram.png]
 
 ## Key Components  
 1. **Client / API Gateway**  
@@ -61,14 +61,18 @@ A serverless Azure architecture stores 2M+ billing records (~300 KB each, ~600 G
 
 ¹ 1 USD = ₹87.6
 
-## Pseudocode
+## Pseudocodes
 
 ### Read Fallback Logic  
-''' javascript
+
+```javascript
 async function handleRequest(id) {
   try {
     const doc = await cosmos.readItem(id);
-    return { status: 200, body: doc };
+    return {
+      status: 200,
+      body: doc
+    };
   } catch (err) {
     if (err.code !== 404) throw err;
 
@@ -87,4 +91,62 @@ async function handleRequest(id) {
       : { status: 404, body: { error: "Not found" } };
   }
 }
-''' 
+
+```
+### Archival Job  
+
+```javascript
+async function archiveOldRecords() {
+  const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const candidates = await cosmos.query(
+    "SELECT * FROM c WHERE c.ts <= @cutoff AND c.archived != true",
+    { cutoff }
+  );
+
+  for (const rec of candidates) {
+    try {
+      if (coldStoreType === "blob") {
+        await blobClient.uploadJSON(`cold/${rec.id}.json`, rec);
+        await cosmos.upsert({
+          id: rec.id,
+          archived: true,
+          blobUri: `cold/${rec.id}.json`
+        });
+      } else {
+        await tableClient.upsertEntity({
+          PartitionKey: pk(rec.id),
+          RowKey: rec.id,
+          payloadJson: JSON.stringify(rec)
+        });
+        await cosmos.upsert({
+          id: rec.id,
+          archived: true
+        });
+      }
+    } catch (err) {
+      await deadLetterQueue.send(rec.id);
+    }
+  }
+}
+
+```
+### Cleanup Job  
+```javascript
+async function cleanupArchived() {
+  const batch = await cosmos.query(
+    "SELECT c.id FROM c WHERE c.archived = true AND c.deleted != true",
+    { maxItemCount: 1000 }
+  );
+
+  for (const { id } of batch) {
+    try {
+      await cosmos.deleteItem(id, id);
+    } catch (err) {
+      console.error("Delete failed", id, err);
+    }
+  }
+}
+```
+---
+
+This README summarizes a **cost-optimized**, **resilient**, and **secure** hybrid hot-cold data solution on Azure, enabling sub-2 s cold reads and transparent API behavior.  
