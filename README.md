@@ -64,3 +64,27 @@ A serverless Azure architecture stores 2M+ billing records (~300 KB each, ~600 G
 ## Pseudocode
 
 ### Read Fallback Logic  
+''' javascript
+async function handleRequest(id) {
+  try {
+    const doc = await cosmos.readItem(id);
+    return { status: 200, body: doc };
+  } catch (err) {
+    if (err.code !== 404) throw err;
+
+    let payload;
+
+    if (coldStoreType === "blob") {
+      const uri = (await cosmos.readMetadata(id)).blobUri;
+      payload = await blobClient.downloadJSON(uri);
+    } else {
+      const entity = await tableClient.getEntity(pk(id), id);
+      payload = JSON.parse(entity.payloadJson);
+    }
+
+    return payload
+      ? { status: 200, body: payload }
+      : { status: 404, body: { error: "Not found" } };
+  }
+}
+''' 
