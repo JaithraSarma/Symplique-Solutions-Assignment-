@@ -21,7 +21,9 @@ A serverless Azure architecture stores 2M+ billing records (~300 KB each, ~600 G
 - **Security**: Encryption at rest/in transit, RBAC + Managed Identities, diagnostic logs, soft-delete, immutability as needed.
 
 ## Architecture Diagram  
-![Hybrid Azure hot-cold data architecture with fallback and monitoring][C:\Users\Administrator\Desktop\Architecture diagram.png]
+<div style="text-align: center;">
+    <img src="Architecture diagram.png" alt="GAN Framework">
+</div>
 
 ## Key Components  
 1. **Client / API Gateway**  
